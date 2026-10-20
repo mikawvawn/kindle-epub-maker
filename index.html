@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kindle EPUB Maker</title>
+<style>
+  :root {
+    --bg: #f6f4ef; --panel: #ffffff; --ink: #1f1d1a; --muted: #6b665d; --line: #e2ddd2;
+    --accent: #2f5d50; --accent-ink: #ffffff; --accent-soft: #e7f0ec;
+    --ok: #2f6b3a; --ok-soft: #e6f2e8; --warn: #8a5a00; --warn-soft: #fff6e0;
+    --err: #b3261e; --err-soft: #fdecea; --page: #fbfaf6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171614; --panel: #201f1c; --ink: #ece8df; --muted: #a39d91; --line: #34322d;
+      --accent: #7fbfa8; --accent-ink: #10201b; --accent-soft: #1f2a26;
+      --ok: #8fd19e; --ok-soft: #1c2a1f; --warn: #f0c060; --warn-soft: #3a2f14;
+      --err: #f2867d; --err-soft: #3a1d1b; --page: #1c1b18;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171614; --panel: #201f1c; --ink: #ece8df; --muted: #a39d91; --line: #34322d;
+    --accent: #7fbfa8; --accent-ink: #10201b; --accent-soft: #1f2a26;
+    --ok: #8fd19e; --ok-soft: #1c2a1f; --warn: #f0c060; --warn-soft: #3a2f14;
+    --err: #f2867d; --err-soft: #3a1d1b; --page: #1c1b18;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  header { padding: 28px 16px 4px; max-width: 1180px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 880px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .stack > * + * { margin-top: 14px; }
+
+  /* Drop zone: idle / drag-over / rejected */
+  #drop { position: relative; border: 2px dashed var(--line); border-radius: 12px; padding: 30px 16px; text-align: center; cursor: pointer; background: var(--accent-soft); transition: border-color .15s, background .15s, transform .15s; outline: none; }
+  #drop:hover, #drop:focus-visible { border-color: var(--accent); }
+  #drop.over { border-color: var(--accent); border-style: solid; transform: scale(1.01); }
+  #drop.rejected { border-color: var(--err); background: var(--err-soft); }
+  #drop .icon { font-size: 28px; line-height: 1; margin-bottom: 8px; }
+  #drop strong { display: block; font-size: 16px; margin-bottom: 2px; }
+  #drop span { color: var(--muted); font-size: 13px; }
+  #drop .when-over, #drop.over .when-idle { display: none; }
+  #drop.over .when-over { display: block; }
+
+  .notice { font-size: 13px; padding: 9px 12px; border-radius: 8px; display: flex; gap: 8px; align-items: flex-start; }
+  .notice.err { color: var(--err); background: var(--err-soft); }
+  .notice button { margin-left: auto; padding: 0 6px; border: 0; background: none; color: inherit; font-size: 16px; line-height: 1.2; }
+
+  textarea { width: 100%; min-height: 90px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 14px/1.45 ui-serif, Georgia, serif; background: var(--bg); color: var(--ink); }
+  input[type=text], select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; background: var(--bg); color: var(--ink); }
+  label.f { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.done { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* File cards */
+  .doc { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .doc.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .doc.error { border-color: var(--err); background: var(--err-soft); }
+  .doc-head { display: flex; align-items: center; gap: 10px; }
+  .doc-head .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .badge.loading { color: var(--accent); background: var(--accent-soft); }
+  .badge.done { color: var(--ok); background: var(--ok-soft); }
+  .badge.error { color: var(--err); background: var(--panel); }
+  .status-icon { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 13px; font-weight: 700; }
+  .status-icon.done { background: var(--ok); color: var(--panel); }
+  .status-icon.error { background: var(--err); color: var(--panel); }
+  .spinner { width: 20px; height: 20px; flex: none; border: 2.5px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+  .meta { font-size: 12px; color: var(--muted); }
+  .bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .bar.indeterminate i { width: 35%; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  .err-msg { color: var(--err); font-size: 13px; margin-top: 6px; }
+  .err-msg small { display: block; color: var(--muted); margin-top: 2px; }
+  .checks { font-size: 13px; margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; }
+  .checks.ok { color: var(--ok); padding-left: 0; }
+  .checks.warn { color: var(--warn); background: var(--warn-soft); }
+  .checks ul { margin: 4px 0 0 18px; padding: 0; }
+  details { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  details summary { cursor: pointer; }
+  details pre { white-space: pre-wrap; font-size: 12px; max-height: 220px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 6px; }
+  .empty { color: var(--muted); text-align: center; padding: 28px 10px; font-size: 14px; }
+  .summary { font-size: 13px; color: var(--muted); }
+
+  #previewWrap { position: sticky; top: 12px; }
+  #preview { background: var(--page); border: 1px solid var(--line); border-radius: 10px; height: calc(100vh - 150px); min-height: 420px; overflow: auto; padding: 32px max(16px, 7%); }
+  .hint { font-size: 13px; color: var(--muted); }
+  .hint a { color: var(--accent); }
+
+  /* Preview uses the same rules as the EPUB stylesheet, scoped to .book */
+  .book { font: 18px/1.45 ui-serif, Georgia, "Iowan Old Style", serif; max-width: 34em; margin: 0 auto; }
+  .book h1.title { font-size: 1.6em; line-height: 1.2; text-align: center; margin: 1em 0 0.4em; }
+  .book p.byline { text-align: center; font-style: italic; margin: 0 0 2.5em; }
+  .book h2 { font-size: 1.25em; text-align: center; margin: 2.2em 0 1.2em; }
+  .book p { margin: 0; line-height: 1.45; }
+  .book.indented p { text-indent: 1.4em; }
+  .book.indented p.first, .book.indented p.center, .book.indented p.quote { text-indent: 0; }
+  .book.spaced p { margin: 0 0 0.75em; }
+  .book p.scene { text-align: center; text-indent: 0; margin: 1.1em 0; letter-spacing: .15em; }
+  .book p.center { text-align: center; }
+  .book p.quote { margin: 0.6em 1.5em; }
+  .book .endmark { font-size: .8em; }
+  .book div.back { margin-top: 2.5em; font-size: .9em; }
+  .book div.back p { text-indent: 0; margin: 0 0 .6em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kindle EPUB Maker</h1>
+</header>
+
+<main>
+  <section class="stack">
+    <div class="panel stack">
+      <div id="drop" tabindex="0" role="button" aria-label="Add files">
+        <div class="when-idle"><strong>Drop PDF or text</strong></div>
+        <div class="when-over"><strong>Release</strong></div>
+        <input id="file" type="file" accept=".pdf,.txt,.md,.markdown,.text,application/pdf,text/plain,text/markdown" multiple hidden>
+      </div>
+      <div id="notice" role="alert" hidden></div>
+      <div>
+        <textarea id="paste" placeholder="Or paste text" aria-label="Paste text"></textarea>
+        <div class="row" style="margin-top:8px"><button id="addPaste">Add</button></div>
+      </div>
+    </div>
+
+    <div class="panel stack" id="filesPanel" hidden>
+      <div class="row" style="justify-content:space-between">
+        <div><strong>Files</strong> <span id="summary" class="summary"></span></div>
+        <div class="row">
+          <select id="pstyle" style="width:auto" aria-label="Paragraph style">
+            <option value="auto">Original</option>
+            <option value="indented">Indented</option>
+            <option value="spaced">Spaced</option>
+          </select>
+        </div>
+      </div>
+      <div id="docs" class="stack" aria-live="polite"></div>
+      <div id="combine" class="stack" hidden>
+        <hr style="border:0;border-top:1px solid var(--line)">
+        <div class="grid2">
+          <input id="bookTitle" type="text" value="Reading Pile" aria-label="Book title">
+          <input id="bookAuthor" type="text" placeholder="Author" aria-label="Author">
+        </div>
+        <button id="dlAll" class="primary">Download all as one EPUB</button>
+      </div>
+    </div>
+
+  </section>
+
+  <section id="previewWrap" hidden>
+    <div id="preview"></div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="epub-core.js"></script>
+<script type="module">
+const E = window.EpubCore;
+const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/';
+const ACCEPT = /\.(pdf|txt|md|markdown|text)$/i;
+let pdfjsPromise = null;
+
+function loadPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = (async () => {
+      const lib = await import(PDFJS_BASE + 'pdf.min.mjs');
+      // A worker must be same-origin, so wrap the CDN worker in a blob URL; if that fails pdf.js
+      // falls back to running in the page (slower, still works).
+      try {
+        const src = await (await fetch(PDFJS_BASE + 'pdf.worker.min.mjs')).text();
+        lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      } catch (e) {
+        lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.mjs';
+      }
+      return lib;
+    })();
+    pdfjsPromise.catch(() => { pdfjsPromise = null; }); // allow a retry after a network failure
+  }
+  return pdfjsPromise;
+}
+
+// Each doc: { id, name, file?, text?, status: 'loading'|'done'|'error', progress, page, pages, model, error, hint, downloaded }
+const state = { docs: [], active: null, seq: 0 };
+const $ = (id) => document.getElementById(id);
+const pstyle = () => $('pstyle').value;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- errors -----------------------------------------------------------
+class UserError extends Error { constructor(msg, hint) { super(msg); this.hint = hint; } }
+
+function explain(e, isPdf) {
+  if (e instanceof UserError) return { error: e.message, hint: e.hint, retryable: false };
+  const s = String((e && (e.name + ' ' + e.message)) || e);
+  if (/PasswordException|password/i.test(s)) return { error: 'Password-protected', retryable: false };
+  if (/InvalidPDF|Invalid PDF|FormatError|bad XRef|MissingPDF/i.test(s)) return { error: 'Not a valid PDF', retryable: false };
+  if (isPdf && /import|fetch|Failed to fetch|NetworkError|dynamically imported|Load failed/i.test(s)) return { error: 'Couldn’t load the PDF reader. Check your connection.', retryable: true };
+  return { error: 'Couldn’t read this file', retryable: true };
+}
+
+function showNotice(msg) {
+  const n = $('notice');
+  n.hidden = false;
+  n.className = 'notice err';
+  n.innerHTML = `<span>${msg}</span><button aria-label="Dismiss">×</button>`;
+  n.querySelector('button').onclick = () => { n.hidden = true; };
+  $('drop').classList.add('rejected');
+  setTimeout(() => $('drop').classList.remove('rejected'), 1600);
+}
+
+// ---------- processing -------------------------------------------------------
+function addFiles(files) {
+  const good = [], bad = [];
+  for (const f of files) (ACCEPT.test(f.name) || f.type === 'application/pdf' ? good : bad).push(f);
+  if (bad.length) showNotice(`Unsupported: ${bad.map((f) => esc(f.name)).join(', ')}`);
+  else $('notice').hidden = true;
+  const docs = good.map((f) => {
+    const d = { id: ++state.seq, name: f.name, file: f, status: 'loading', progress: 0 };
+    state.docs.push(d);
+    return d;
+  });
+  render();
+  // Process one at a time so progress is meaningful and memory stays low.
+  return docs.reduce((p, d) => p.then(() => processDoc(d)), Promise.resolve());
+}
+window.handleFiles = addFiles; // handy for scripted testing
+
+async function processDoc(d) {
+  d.status = 'loading'; d.progress = 0; d.page = 0; d.error = null; d.downloaded = false;
+  render();
+  const isPdf = d.file ? (/\.pdf$/i.test(d.file.name) || d.file.type === 'application/pdf') : false;
+  try {
+    let model;
+    if (isPdf) {
+      
+      const lib = await loadPdfjs();
+      
+      const data = new Uint8Array(await d.file.arrayBuffer());
+      if (data.length === 0) throw new UserError('Empty file');
+      model = await E.extractPdf(lib, data, { onProgress: (p, page, pages) => { d.progress = p; d.page = page; d.pages = pages; updateCard(d); } });
+      if (!model.blocks.some((b) => b.type === 'p')) {
+        throw new UserError('No text found (scanned PDF?)');
+      }
+    } else {
+      const text = d.file ? await d.file.text() : d.text;
+      if (!text.trim()) throw new UserError('Empty file');
+      if (/\u0000/.test(text.slice(0, 2000))) throw new UserError('Not a text file');
+      model = E.parseText(text, d.name);
+      if (!model.blocks.length) throw new UserError('No text found');
+    }
+    d.model = model;
+    d.status = 'done';
+    if (!state.active || !state.docs.some((x) => x.id === state.active && x.status === 'done')) state.active = d.id;
+  } catch (e) {
+    if (!(e instanceof UserError) && !/Password|InvalidPDF/.test(e && e.name)) console.error(e);
+    Object.assign(d, explain(e, isPdf));
+    d.status = 'error';
+  }
+  render();
+}
+
+// ---------- rendering --------------------------------------------------------
+function loadingLabel(d) {
+  if (d.pages) return `${d.page} / ${d.pages}`;
+  return '';
+}
+
+function cardHtml(d) {
+  if (d.status === 'loading') {
+    const det = d.pages ? '' : ' indeterminate';
+    return `
+      <div class="doc-head"><div class="spinner" aria-hidden="true"></div><div class="name" title="${esc(d.name)}">${esc(d.name)}</div></div>
+      <div class="meta" data-role="phase" style="margin-top:6px">${esc(loadingLabel(d))}</div>
+      <div class="bar${det}"><i style="width:${d.pages ? Math.round(d.progress * 100) + '%' : ''}"></i></div>`;
+  }
+  if (d.status === 'error') {
+    return `
+      <div class="doc-head"><div class="status-icon error" aria-hidden="true">!</div><div class="name" title="${esc(d.name)}">${esc(d.name)}</div></div>
+      <div class="err-msg">${esc(d.error)}</div>
+      <div class="row" style="margin-top:10px">
+        ${d.retryable && (d.file || d.text) ? '<button data-act="retry">Try again</button>' : ''}
+        <button data-act="remove">Remove</button>
+      </div>`;
+  }
+  const m = d.model;
+  const paras = m.blocks.filter((b) => b.type === 'p').length;
+  const words = m.blocks.reduce((n, b) => n + (b.runs ? E.runsText(b.runs).split(/\s+/).filter(Boolean).length : 0), 0);
+  const style = pstyle() === 'auto' ? m.paragraphStyle : pstyle();
+  const checks = m.warnings.length
+    ? `<div class="checks warn"><ul>${m.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div>`
+    : '';
+  const removed = m.removed.length
+    ? `<details><summary>${m.removed.length} line${m.removed.length === 1 ? '' : 's'} removed</summary><pre>${esc(m.removed.map((r) => `p${r.page}  ${r.text}`).join('\n'))}</pre></details>`
+    : '';
+  return `
+    <div class="doc-head"><div class="status-icon done" aria-hidden="true">✓</div><div class="name" title="${esc(d.name)}">${esc(d.name)}</div></div>
+    <div class="meta" style="margin:4px 0 10px">${words.toLocaleString()} words${m.stats.pages ? ` · ${m.stats.pages} pages` : ''}</div>
+    <div class="grid2">
+      <input type="text" data-field="title" value="${esc(m.title)}" placeholder="Title" aria-label="Title">
+      <input type="text" data-field="author" value="${esc(m.author)}" placeholder="Author" aria-label="Author">
+    </div>
+    ${checks}
+    ${removed}
+    <div class="row" style="margin-top:10px">
+      <button class="${d.downloaded ? 'done' : 'primary'}" data-act="download">${d.downloaded ? 'Downloaded ✓' : 'Download EPUB'}</button>
+      <button data-act="preview">Preview</button>
+      <button data-act="remove">Remove</button>
+    </div>`;
+}
+
+function render() {
+  const box = $('docs');
+  if (!state.docs.length) {
+    box.innerHTML = '';
+  } else {
+    box.innerHTML = state.docs.map((d) => `<div class="doc ${d.status}${d.id === state.active && d.status === 'done' ? ' active' : ''}" data-doc="${d.id}">${cardHtml(d)}</div>`).join('');
+  }
+  const done = state.docs.filter((d) => d.status === 'done').length;
+  const loading = state.docs.filter((d) => d.status === 'loading').length;
+  const failed = state.docs.filter((d) => d.status === 'error').length;
+  const parts = [];
+  if (loading) parts.push(`${loading} converting`);
+  if (done) parts.push(`${done} ready`);
+  if (failed) parts.push(`${failed} failed`);
+  $('summary').textContent = parts.length ? '· ' + parts.join(' · ') : '';
+  $('combine').hidden = done < 2;
+  $('filesPanel').hidden = !state.docs.length;
+  $('previewWrap').hidden = !state.docs.length;
+  renderPreview();
+}
+
+// Update only the progress bits of a loading card (no full re-render while typing elsewhere).
+function updateCard(d) {
+  const el = document.querySelector(`[data-doc="${d.id}"]`);
+  if (!el || d.status !== 'loading') return;
+  const phase = el.querySelector('[data-role="phase"]');
+  if (phase) phase.textContent = loadingLabel(d);
+  const bar = el.querySelector('.bar');
+  if (bar && d.pages) { bar.classList.remove('indeterminate'); bar.querySelector('i').style.width = Math.round(d.progress * 100) + '%'; }
+}
+
+function renderPreview() {
+  const p = $('preview');
+  const d = state.docs.find((x) => x.id === state.active && x.status === 'done');
+  if (d) { p.innerHTML = E.previewHtml(d.model, { paragraphStyle: pstyle() }); return; }
+  const loading = state.docs.find((x) => x.status === 'loading');
+  p.innerHTML = loading ? '<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>' : '';
+}
+
+// ---------- downloads --------------------------------------------------------
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+async function downloadDoc(d, btn) {
+  btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    const m = d.model;
+    const blob = await E.buildEpub(window.JSZip, { title: m.title || 'Untitled', author: m.author, docs: [m] }, { paragraphStyle: pstyle() });
+    download(blob, E.safeFilename(m.title) + '.epub');
+    d.downloaded = true;
+  } catch (e) {
+    console.error(e);
+    showNotice('Couldn’t build the EPUB');
+  }
+  render();
+}
+
+// ---------- events -----------------------------------------------------------
+$('docs').addEventListener('click', (ev) => {
+  const card = ev.target.closest('[data-doc]');
+  if (!card) return;
+  const d = state.docs.find((x) => x.id === +card.dataset.doc);
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) {
+    if (d.status === 'done' && !/INPUT|SUMMARY|PRE/.test(ev.target.tagName) && state.active !== d.id) { state.active = d.id; render(); }
+    return;
+  }
+  const act = btn.dataset.act;
+  if (act === 'remove') {
+    state.docs = state.docs.filter((x) => x !== d);
+    if (state.active === d.id) state.active = state.docs.find((x) => x.status === 'done')?.id || null;
+    render();
+  }
+  if (act === 'retry') processDoc(d);
+  if (act === 'preview') { state.active = d.id; render(); $('previewWrap').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  if (act === 'download') downloadDoc(d, btn);
+});
+$('docs').addEventListener('input', (ev) => {
+  const f = ev.target.dataset.field;
+  if (!f) return;
+  const d = state.docs.find((x) => x.id === +ev.target.closest('[data-doc]').dataset.doc);
+  d.model[f] = ev.target.value;
+  if (d.id === state.active) renderPreview();
+});
+$('pstyle').addEventListener('change', render);
+
+const drop = $('drop'), file = $('file');
+let dragDepth = 0;
+drop.addEventListener('click', () => file.click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+file.addEventListener('change', () => { addFiles([...file.files]); file.value = ''; });
+// Highlight the drop zone whenever files are dragged anywhere over the page.
+window.addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; drop.classList.add('over'); } });
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) drop.classList.remove('over'); });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0; drop.classList.remove('over');
+  const files = [...(e.dataTransfer?.files || [])];
+  if (files.length) addFiles(files);
+});
+
+$('addPaste').addEventListener('click', () => {
+  const t = $('paste').value;
+  if (!t.trim()) { $('paste').focus(); return; }
+  const d = { id: ++state.seq, name: 'Pasted text', text: t, status: 'loading', progress: 0 };
+  state.docs.push(d);
+  $('paste').value = '';
+  processDoc(d);
+});
+
+$('dlAll').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const ready = state.docs.filter((d) => d.status === 'done');
+  const title = $('bookTitle').value.trim() || 'Reading Pile';
+  btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    const blob = await E.buildEpub(window.JSZip, { title, author: $('bookAuthor').value.trim(), docs: ready.map((d) => d.model) }, { paragraphStyle: pstyle() });
+    download(blob, E.safeFilename(title) + '.epub');
+    btn.textContent = 'Downloaded ✓';
+    btn.className = 'done';
+  } catch (e) {
+    showNotice('Couldn’t build the EPUB');
+    btn.textContent = 'Download all as one EPUB';
+  }
+  btn.disabled = false;
+});
+
+if (!window.JSZip) showNotice('Offline. Reload when connected.');
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Converted books (may be copyrighted)
+*.epub
+*.pdf
+
+# Local tooling
+.claude/
+.DS_Store
+node_modules/
